@@ -205,9 +205,10 @@ create_graphics_pipeline :: (shader_stages: [] VkPipelineShaderStageCreateInfo, 
     };
 
     dynamic_states := VkDynamicState.[
-        .VIEWPORT, .SCISSOR, .DEPTH_BIAS, .DEPTH_BIAS_ENABLE, .DEPTH_TEST_ENABLE, .DEPTH_WRITE_ENABLE, .DEPTH_COMPARE_OP,
+        .VIEWPORT, .SCISSOR, .DEPTH_BIAS, .DEPTH_TEST_ENABLE, .DEPTH_WRITE_ENABLE, .DEPTH_COMPARE_OP,
+        .STENCIL_TEST_ENABLE, .STENCIL_OP, .STENCIL_COMPARE_MASK, .STENCIL_WRITE_MASK, .STENCIL_REFERENCE,
         // Fill some more space which can be filled by optional dynamic state:
-        .MAX_ENUM, .MAX_ENUM, .MAX_ENUM, .MAX_ENUM, .MAX_ENUM, .MAX_ENUM,
+        .MAX_ENUM,
     ];
     found, num_dynamic_states := array_find(dynamic_states, .MAX_ENUM);
 
@@ -222,6 +223,9 @@ create_graphics_pipeline :: (shader_stages: [] VkPipelineShaderStageCreateInfo, 
     //    num_dynamic_states += 1;
     //}
 
+    // when the pipeline uses depth or stencil formats.
+    depth_stencil_state := VkPipelineDepthStencilStateCreateInfo.{};
+
     use_descriptor_buffer := is_optional_ext_supported(.DESCRIPTOR_BUFFER);
 
     pipeline_create_info := VkGraphicsPipelineCreateInfo.{
@@ -234,6 +238,7 @@ create_graphics_pipeline :: (shader_stages: [] VkPipelineShaderStageCreateInfo, 
         pViewportState = *viewport_state,
         pRasterizationState = *rasterization_state,
         pMultisampleState = *multisample_state,
+        pDepthStencilState = *depth_stencil_state,
         pColorBlendState = *color_blend_state,
         pDynamicState = *dynamic_state,
         layout = vk_pipeline_layout,
