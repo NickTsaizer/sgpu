@@ -11,6 +11,14 @@ gpu_malloc :: ($type: Type, memory_type: Memory_Type = .DEFAULT) -> (mapped: *ty
     return cpu_ptr.(*type), gpu_ptr;
 }
 
+gpu_array_new :: (count: s64, $type: Type, memory_type: Memory_Type = .DEFAULT) -> (mapped: [] type, gpu: Gpu_Ptr) {
+    cpu_ptr, gpu_ptr := gpu_malloc(size_of(type) * count, memory_type);
+    array: [] type;
+    array.data = cpu_ptr;
+    array.count = count;
+    return array, gpu_ptr;
+}
+
 gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void, gpu: Gpu_Ptr) {
     memory_flags: VkMemoryPropertyFlagBits;
     memory_usage_flags: VmaMemoryUsage;
