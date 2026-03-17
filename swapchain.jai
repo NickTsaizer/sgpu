@@ -84,6 +84,8 @@ gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
             return result, 0;
         }
 
+        timestamps_reset(cmd_buff);
+
         transition_swapchain_to_general(cmd_buff);
 
         submit_command_buffer(.{

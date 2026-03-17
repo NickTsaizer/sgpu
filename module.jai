@@ -559,12 +559,15 @@ gpu_init :: (optional_features: Gpu_Optional_Features = .DESCRIPTOR_BUFFER) -> G
     result = create_global_pipeline_layout();
     return_if_error(result);
 
+    gpu_init_timestamps();
+
     return .SUCCESS;
 }
 
 gpu_shutdown :: () {
     vkDeviceWaitIdle(vk_device);
 
+    gpu_destroy_timestamps();
     gpu_collect_garbage();
 
     for arena : cmd_pools {
@@ -625,6 +628,7 @@ gpu_get_queue :: (queue_type: Gpu_Queue_Type, queue_index: u32) -> Gpu_Queue {
 #load "gpu_arena.jai";
 #load "swapchain.jai";
 #load "sync.jai";
+#load "query.jai";
 
 #if SLANG_COMPILER {
     #load "shader_compiler.jai";
