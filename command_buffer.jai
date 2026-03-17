@@ -258,7 +258,29 @@ gpu_set_depth_stencil_state :: (cmd: Gpu_Command_Buffer, desc: Gpu_Depth_Stencil
         vkCmdSetDepthWriteEnable(vk_cmd_buff, VK_FALSE);
     }
 
-    // #todo: set stencil state
+    has_stencil := desc.stencil_front.test != .NEVER || desc.stencil_back.test != .NEVER;
+    if has_stencil {
+        vkCmdSetStencilTestEnable(vk_cmd_buff, VK_TRUE);
+
+        vkCmdSetStencilOp(vk_cmd_buff, .FACE_FRONT_BIT,
+            desc.stencil_front.fail_op.(VkStencilOp),
+            desc.stencil_front.pass_op.(VkStencilOp),
+            desc.stencil_front.depth_fail_op.(VkStencilOp),
+            desc.stencil_front.test.(VkCompareOp));
+
+        vkCmdSetStencilOp(vk_cmd_buff, .FACE_BACK_BIT,
+            desc.stencil_back.fail_op.(VkStencilOp),
+            desc.stencil_back.pass_op.(VkStencilOp),
+            desc.stencil_back.depth_fail_op.(VkStencilOp),
+            desc.stencil_back.test.(VkCompareOp));
+
+        vkCmdSetStencilCompareMask(vk_cmd_buff, .FRONT_AND_BACK, desc.stencil_read_mask.(u32));
+        vkCmdSetStencilWriteMask(vk_cmd_buff, .FRONT_AND_BACK, desc.stencil_write_mask.(u32));
+        vkCmdSetStencilReference(vk_cmd_buff, .FACE_FRONT_BIT, desc.stencil_front.reference.(u32));
+        vkCmdSetStencilReference(vk_cmd_buff, .FACE_BACK_BIT, desc.stencil_back.reference.(u32));
+    } else {
+        vkCmdSetStencilTestEnable(vk_cmd_buff, VK_FALSE);
+    }
 }
 
 gpu_set_blend_state :: (cmd: Gpu_Command_Buffer, state: Gpu_Blend_State) {

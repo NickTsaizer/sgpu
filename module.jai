@@ -69,14 +69,14 @@ Store_Op :: enum {
 }
 
 Stencil_Op :: enum {
-    KEEP;
-    ZERO;
-    REPLACE;
-    INVERT;
-    INCREMENT_AND_CLAMP;
-    DECREMENT_AND_CLAMP;
-    INCREMENT_AND_WRAP;
-    DECREMENT_AND_WARP;
+    KEEP                :: 0;
+    ZERO                :: 1;
+    REPLACE             :: 2;
+    INCREMENT_AND_CLAMP :: 3;
+    DECREMENT_AND_CLAMP :: 4;
+    INVERT              :: 5;
+    INCREMENT_AND_WRAP  :: 6;
+    DECREMENT_AND_WRAP  :: 7;
 }
 
 Blend :: enum {
