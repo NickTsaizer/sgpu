@@ -364,6 +364,9 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
     depth_attachment: VkRenderingAttachmentInfo;
     if desc.depth_target.view != 0 {
         view := get_texture_view(desc.depth_target.view);
+        if view == null {
+            return .ERROR_INVALID_TEXTURE;
+        }
         texture := get_texture(view.texture);
         render_area.extent.width = texture.desc.dimensions[0];
         render_area.extent.height = texture.desc.dimensions[1];
@@ -381,7 +384,10 @@ gpu_begin_render_pass :: (cmd: Gpu_Command_Buffer, desc: Gpu_Render_Pass_Desc) -
 
     stencil_attachment: VkRenderingAttachmentInfo;
     if desc.stencil_target.view != 0 {
-        view := get_texture_view(desc.depth_target.view);
+        view := get_texture_view(desc.stencil_target.view);
+        if view == null {
+            return .ERROR_INVALID_TEXTURE;
+        }
         texture := get_texture(view.texture);
         render_area.extent.width = texture.desc.dimensions[0];
         render_area.extent.height = texture.desc.dimensions[1];

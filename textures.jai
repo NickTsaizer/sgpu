@@ -137,6 +137,7 @@ gpu_texture_view :: (texture_handle: Gpu_Texture, desc: Gpu_View_Desc = .{}) -> 
     handle := pool_add(*live_views, .{desc, texture_handle, vk_view});
 
     if handle == 0 {
+        vkDestroyImageView(vk_device, vk_view, null);
         log_error("Exceeded maximum number of texture views (%)!", live_views.max);
         return 0;
     }
@@ -191,6 +192,7 @@ gpu_create_sampler :: (desc: Gpu_Sampler_Desc) -> Gpu_Sampler {
 
     handle := pool_add(*live_samplers, vk_sampler);
     if handle == 0 {
+        vkDestroySampler(vk_device, vk_sampler, null);
         log_error("Exceeded maximum number of texture samplers (%)!", live_samplers.max);
         return 0;
     }

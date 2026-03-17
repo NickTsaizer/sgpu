@@ -33,8 +33,10 @@ gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
     };
 
     for 0..MAX_FRAMES_IN_FLIGHT-1 {
-        vkCreateSemaphore(vk_device, *semaphore_create_info, null, *acquire_semaphores[it]);
-        vkCreateSemaphore(vk_device, *semaphore_create_info, null, *present_semaphores[it]);
+        vk_result := vkCreateSemaphore(vk_device, *semaphore_create_info, null, *acquire_semaphores[it]);
+        assert_vk_result(vk_result);
+        vk_result = vkCreateSemaphore(vk_device, *semaphore_create_info, null, *present_semaphores[it]);
+        assert_vk_result(vk_result);
     }
 
     gpu_frame_timeline = gpu_create_semaphore(0);

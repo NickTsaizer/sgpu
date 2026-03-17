@@ -22,6 +22,7 @@ gpu_create_semaphore :: (initial: u64) -> Gpu_Semaphore {
 
     handle := pool_add(*live_semaphores, .{vk_semaphore});
     if handle == 0 {
+        vkDestroySemaphore(vk_device, vk_semaphore, null);
         log_error("Exceeded semaphore allocation capacity (%)!", live_semaphores.max);
         return 0;
     }
