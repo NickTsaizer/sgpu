@@ -8,7 +8,14 @@ Native_Window_Type :: enum {
     COCOA;
 }
 
-gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
+Present_Mode :: enum {
+    IMMEDIATE    :: 0;
+    MAILBOX      :: 1;
+    FIFO         :: 2;
+    FIFO_RELAXED :: 3;
+}
+
+gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type, preferred_present_modes: [] Present_Mode = .[], preferred_formats: [] Format = .[]) {
     auto_release_temp();
     push_allocator(temp);
 
@@ -16,16 +23,8 @@ gpu_init_swapchain :: (native_window: u64, window_type: Native_Window_Type) {
     native_window_type = window_type;
     recreate_surface();
 
-    // #todo: allow selecting present modes
-    swapchain_present_mode = VkPresentModeKHR.IMMEDIATE_KHR;
-    // #todo: allow selecting swapchain formats
-    swapchain_format = .{VkFormat.B8G8R8A8_UNORM, .COLOR_SPACE_SRGB_NONLINEAR_KHR};
-
-    supported_formats: [..] VkSurfaceFormatKHR;
-    num_formats: u32;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(vk_physical_device, vk_surface, *num_formats, null);
-    array_resize(*supported_formats, num_formats);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(vk_physical_device, vk_surface, *num_formats, supported_formats.data);
+    swapchain_present_mode = select_present_mode(preferred_present_modes);
+    swapchain_format = select_format(preferred_formats);
 
     recreate_swapchain();
 
@@ -176,6 +175,44 @@ gpu_frame_index :: () -> u32 {
 }
 
 #scope_module
+
+select_format :: (preferred_formats: [] Format) -> VkSurfaceFormatKHR {
+    num_supported: u32;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(vk_physical_device, vk_surface, *num_supported, null);
+
+    supported_formats: [..] VkSurfaceFormatKHR;
+    supported_formats.allocator = temp;
+    array_resize(*supported_formats, num_supported);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(vk_physical_device, vk_surface, *num_supported, supported_formats.data);
+
+    for preferred_formats {
+        vk_format := it.(VkFormat);
+        for supported_formats {
+            if it.format == vk_format return it;
+        }
+    }
+
+    return .{VkFormat.B8G8R8A8_UNORM, .COLOR_SPACE_SRGB_NONLINEAR_KHR};
+}
+
+select_present_mode :: (preferred_modes: [] Present_Mode) -> VkPresentModeKHR {
+    num_supported: u32;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(vk_physical_device, vk_surface, *num_supported, null);
+
+    supported_modes: [..] VkPresentModeKHR;
+    supported_modes.allocator = temp;
+    array_resize(*supported_modes, num_supported);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(vk_physical_device, vk_surface, *num_supported, supported_modes.data);
+
+    for preferred_modes {
+        vk_mode := it.(VkPresentModeKHR);
+        for supported_modes {
+            if it == vk_mode return vk_mode;
+        }
+    }
+
+    return .IMMEDIATE_KHR;
+}
 
 recreate_swapchain :: () {
     surface_capabilities: VkSurfaceCapabilitiesKHR;
