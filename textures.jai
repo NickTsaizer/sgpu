@@ -114,8 +114,30 @@ gpu_copy_to_texture :: (dest: Gpu_Texture, src: *void, mip: u32 = 0, layer_slice
     assert_vk_result(vk_result);
 }
 
-gpu_copy_from_texture :: (cmd: Gpu_Command_Buffer, dest: Gpu_Ptr, src: Gpu_Ptr, texture: Gpu_Texture) {
+gpu_copy_from_texture :: (cmd: Gpu_Command_Buffer, dest_buffer: Gpu_Ptr, src_texture: Gpu_Texture, mip: u32 = 0, layer_slice: [2] u32 = .[0, U32_MAX]) -> Gpu_Result {
+    texture := get_texture(src_texture);
+    if !texture then return .ERROR_INVALID_TEXTURE;
 
+    result, dst_buffer, dst_offset := get_buffer_and_offset(dest_buffer);
+    return_if_error(result);
+
+    base_layer := layer_slice[0];
+    copy_region := VkBufferImageCopy.{
+        bufferOffset = dst_offset.(VkDeviceSize),
+        bufferRowLength = 0,
+        bufferImageHeight = 0,
+        imageOffset = VkOffset3D.{},
+        imageSubresource = VkImageSubresourceLayers.{
+            aspectMask = get_image_aspect_mask(texture.desc.format),
+            mipLevel = mip,
+            baseArrayLayer = base_layer,
+            layerCount = min(layer_slice[1], texture.desc.layer_count - base_layer),
+        },
+        imageExtent = VkExtent3D.{texture.desc.dimensions[0], texture.desc.dimensions[1], texture.desc.dimensions[2]},
+    };
+
+    vkCmdCopyImageToBuffer(get_cmd_buff(cmd), texture.vk_image, .GENERAL, dst_buffer, 1, *copy_region);
+    return .SUCCESS;
 }
 
 gpu_texture_view :: (texture_handle: Gpu_Texture, desc: Gpu_View_Desc = .{}) -> Gpu_Texture_View {
