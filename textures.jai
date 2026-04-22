@@ -1,10 +1,16 @@
 #scope_export
 
 gpu_create_texture :: (desc: Gpu_Texture_Desc, optional_signal_texture_ready: [] Gpu_Timeline_Pair = .[], label: string = "") -> Gpu_Result, Gpu_Texture {
+    create_flags: VkImageCreateFlags = 0;
+    if desc.type == .CUBE || desc.type == .CUBE_ARRAY {
+        create_flags |= .CUBE_COMPATIBLE_BIT;
+    }
+
     image_create_info := VkImageCreateInfo.{
+        flags = create_flags,
         format = desc.format.(VkFormat),
         extent = VkExtent3D.{desc.dimensions[0], desc.dimensions[1], desc.dimensions[2]},
-        imageType = desc.type.(VkImageType),
+        imageType = texture_type_to_vk_image_type(desc.type),
         mipLevels = desc.mip_count,
         arrayLayers = desc.layer_count,
         samples = desc.sample_count.(VkSampleCountFlagBits),
@@ -214,6 +220,19 @@ gpu_free :: (sampler: Gpu_Sampler) {
 }
 
 #scope_module
+
+texture_type_to_vk_image_type :: (t: Texture_Type) -> VkImageType {
+    if t == {
+        case ._1D;        return ._1D;
+        case ._2D;        return ._2D;
+        case ._3D;        return ._3D;
+        case .CUBE;       return ._2D;
+        case ._1D_ARRAY;  return ._1D;
+        case ._2D_ARRAY;  return ._2D;
+        case .CUBE_ARRAY; return ._2D;
+    }
+    return ._2D;
+}
 
 Texture :: struct {
     desc: Gpu_Texture_Desc;
