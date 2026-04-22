@@ -11,6 +11,8 @@
     compile_example("04_mesh_shaders");
     compile_example("textures");
     compile_example("05_indirect_dispatch");
+    compile_example("06_texture_array");
+    compile_example("07_blit_image");
 
     copy_module_libraries_to_target("bin");
 }
