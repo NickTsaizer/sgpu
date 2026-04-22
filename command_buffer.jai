@@ -95,7 +95,7 @@ gpu_cmd_end_debug_marker :: (cmd: Gpu_Command_Buffer) {
 
 gpu_scoped_debug_label :: (cmd: Gpu_Command_Buffer, label: string) #expand {
     gpu_cmd_begin_debug_marker(cmd, label);
-    defer gpu_cmd_end_debug_marker(cmd);
+    `defer gpu_cmd_end_debug_marker(cmd);
 }
 
 gpu_memcpy :: (cmd: Gpu_Command_Buffer, dest: Gpu_Ptr, src: Gpu_Ptr, num_bytes: s64) -> Gpu_Result {
