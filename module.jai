@@ -565,6 +565,8 @@ gpu_init :: (optional_features: Gpu_Optional_Features = .DESCRIPTOR_BUFFER) -> G
 
     gpu_init_timestamps();
 
+    init(*memory_mutex, "Memory Mutex");
+
     return .SUCCESS;
 }
 
