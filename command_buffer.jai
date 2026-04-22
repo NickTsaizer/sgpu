@@ -193,6 +193,49 @@ gpu_copy_to_texture :: (cmd: Gpu_Command_Buffer, dest: Gpu_Texture, src: Gpu_Tex
     return .SUCCESS;
 }
 
+gpu_blit_image :: (cmd: Gpu_Command_Buffer, dst: Gpu_Texture, src: Gpu_Texture, src_mip: u32 = 0, dst_mip: u32 = 0, filter: VkFilter = .LINEAR) -> Gpu_Result {
+    dst_texture := get_texture(dst);
+    src_texture := get_texture(src);
+    if !dst_texture || !src_texture then return .ERROR_INVALID_TEXTURE;
+
+    vk_cmd_buff := get_cmd_buff(cmd);
+
+    src_w := max(1, src_texture.desc.dimensions[0] >> src_mip);
+    src_h := max(1, src_texture.desc.dimensions[1] >> src_mip);
+    dst_w := max(1, dst_texture.desc.dimensions[0] >> dst_mip);
+    dst_h := max(1, dst_texture.desc.dimensions[1] >> dst_mip);
+
+    blit_region := VkImageBlit2.{
+        srcSubresource = .{
+            aspectMask = get_image_aspect_mask(src_texture.desc.format),
+            mipLevel = src_mip,
+            baseArrayLayer = 0,
+            layerCount = src_texture.desc.layer_count,
+        },
+        srcOffsets = .[.{x = 0, y = 0, z = 0}, .{x = xx src_w, y = xx src_h, z = 1}],
+        dstSubresource = .{
+            aspectMask = get_image_aspect_mask(dst_texture.desc.format),
+            mipLevel = dst_mip,
+            baseArrayLayer = 0,
+            layerCount = dst_texture.desc.layer_count,
+        },
+        dstOffsets = .[.{x = 0, y = 0, z = 0}, .{x = xx dst_w, y = xx dst_h, z = 1}],
+    };
+
+    blit_info := VkBlitImageInfo2.{
+        srcImage = src_texture.vk_image,
+        srcImageLayout = .GENERAL,
+        dstImage = dst_texture.vk_image,
+        dstImageLayout = .GENERAL,
+        regionCount = 1,
+        pRegions = *blit_region,
+        filter = filter,
+    };
+
+    vkCmdBlitImage2(vk_cmd_buff, *blit_info);
+    return .SUCCESS;
+}
+
 gpu_clear_texture :: (cmd: Gpu_Command_Buffer, view_handle: Gpu_Texture_View, clear_color: Gpu_Color_Value) -> Gpu_Result {
     view := get_texture_view(view_handle);
     if !view then return .ERROR_INVALID_TEXTURE_VIEW;
