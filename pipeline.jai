@@ -1,6 +1,6 @@
 #scope_export
 
-gpu_create_compute_pipeline :: (spirv: [] u8) -> Gpu_Pipeline {
+gpu_create_compute_pipeline :: (spirv: [] u8, label: string = "") -> Gpu_Pipeline {
     stage := create_shader_stage(spirv, .COMPUTE_BIT);
 
     use_descriptor_buffer := is_optional_ext_supported(.DESCRIPTOR_BUFFER);
@@ -18,10 +18,11 @@ gpu_create_compute_pipeline :: (spirv: [] u8) -> Gpu_Pipeline {
     vkDestroyShaderModule(vk_device, stage.module, null);
 
     handle := pool_add(*live_pipelines, .{.COMPUTE, vk_pipeline});
+    #if DEBUG_MARKERS then set_object_debug_name(.PIPELINE, cast(u64) vk_pipeline, label);
     return handle;
 }
 
-gpu_create_graphics_pipeline :: (vertex_spirv: [] u8, pixel_spirv: [] u8, raster_desc: Gpu_Raster_Desc) -> Gpu_Pipeline {
+gpu_create_graphics_pipeline :: (vertex_spirv: [] u8, pixel_spirv: [] u8, raster_desc: Gpu_Raster_Desc, label: string = "") -> Gpu_Pipeline {
     shader_stages := VkPipelineShaderStageCreateInfo.[
         create_shader_stage(vertex_spirv, .VERTEX_BIT),
         create_shader_stage(pixel_spirv, .FRAGMENT_BIT)
@@ -32,10 +33,10 @@ gpu_create_graphics_pipeline :: (vertex_spirv: [] u8, pixel_spirv: [] u8, raster
         }
     }
 
-    return create_graphics_pipeline(shader_stages, raster_desc);
+    return create_graphics_pipeline(shader_stages, raster_desc, label);
 }
 
-gpu_create_meshlets_pipeline :: (meshlets_spirv: [] u8, pixel_spirv: [] u8, raster_desc: Gpu_Raster_Desc) -> Gpu_Pipeline {
+gpu_create_meshlets_pipeline :: (meshlets_spirv: [] u8, pixel_spirv: [] u8, raster_desc: Gpu_Raster_Desc, label: string = "") -> Gpu_Pipeline {
     shader_stages := VkPipelineShaderStageCreateInfo.[
         create_shader_stage(meshlets_spirv, .MESH_BIT_EXT),
         create_shader_stage(pixel_spirv, .FRAGMENT_BIT)
@@ -46,7 +47,7 @@ gpu_create_meshlets_pipeline :: (meshlets_spirv: [] u8, pixel_spirv: [] u8, rast
         }
     }
 
-    return create_graphics_pipeline(shader_stages, raster_desc);
+    return create_graphics_pipeline(shader_stages, raster_desc, label);
 }
 
 gpu_free_pipeline :: (pipeline: Gpu_Pipeline) {
@@ -135,7 +136,7 @@ create_shader_stage :: (spirv: [] u8, stage: VkShaderStageFlagBits) -> VkPipelin
     return stage_create_info;
 }
 
-create_graphics_pipeline :: (shader_stages: [] VkPipelineShaderStageCreateInfo, raster_desc: Gpu_Raster_Desc) -> Gpu_Pipeline {
+create_graphics_pipeline :: (shader_stages: [] VkPipelineShaderStageCreateInfo, raster_desc: Gpu_Raster_Desc, label: string = "") -> Gpu_Pipeline {
     attachment_formats: [MAX_ATTACHMENTS] VkFormat;
 
     assert(raster_desc.color_targets.count < attachment_formats.count);
@@ -254,6 +255,7 @@ create_graphics_pipeline :: (shader_stages: [] VkPipelineShaderStageCreateInfo, 
     }
 
     handle := pool_add(*live_pipelines, .{.GRAPHICS, vk_pipeline});
+    #if DEBUG_MARKERS then set_object_debug_name(.PIPELINE, cast(u64) vk_pipeline, label);
     return handle;
 }
 
