@@ -20,6 +20,13 @@ compile_shader :: (shader_path: string, output_directory: string = "", debug_sym
             slang.CompilerOptionValueKind.Int, xx slang.IGlobalSession_findCapability(global_session, "spirv_1_6"), 0, null, null
         }
     });
+    if is_optional_ext_supported(.SHADER_CLOCK) {
+        array_add(*options, .{
+            slang.CompilerOptionName.Capability, .{
+                slang.CompilerOptionValueKind.Int, xx slang.IGlobalSession_findCapability(global_session, "spvShaderClockKHR"), 0, null, null
+            }
+        });
+    }
     array_add(*options, .{
         slang.CompilerOptionName.GLSLForceScalarLayout, .{
             slang.CompilerOptionValueKind.Int, 1, 0, null, null

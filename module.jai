@@ -354,6 +354,7 @@ Gpu_Optional_Features :: enum_flags {
     SHADER_INT8             :: 1 << 5;
     STORAGE_PUSH_CONSTANT_8 :: 1 << 6;
     MESH_SHADERS            :: 1 << 7;
+    SHADER_CLOCK            :: 1 << 8;
 
     // -- nyi --
     RAY_TRACING             ;
@@ -820,6 +821,12 @@ create_device :: () -> Gpu_Result {
         };
     }
 
+    if requested_optional_features & .SHADER_CLOCK != 0 {
+        optional_extensions[Optional_Extension.SHADER_CLOCK] = .{
+            name = VK_KHR_SHADER_CLOCK_EXTENSION_NAME,
+        };
+    }
+
     result: VkResult;
 
     // pick the best physical device
@@ -1084,6 +1091,16 @@ create_device :: () -> Gpu_Result {
             chain = *mesh_shaders;
         }
 
+        if is_optional_ext_supported(.SHADER_CLOCK) {
+            shader_clock := VkPhysicalDeviceShaderClockFeaturesKHR.{
+                pNext = chain,
+                shaderSubgroupClock = VK_TRUE,
+                shaderDeviceClock = VK_TRUE,
+            };
+            chain = *shader_clock;
+        }
+
+
         vk12_features := VkPhysicalDeviceVulkan12Features.{
             pNext = chain,
             bufferDeviceAddress = VK_TRUE,
@@ -1234,6 +1251,7 @@ cpu_allocator: Allocator;
 Optional_Extension :: enum {
     DESCRIPTOR_BUFFER :: 0;
     MESH_SHADERS      :: 1;
+    SHADER_CLOCK      :: 2;
 }
 
 Optional_Extension_Info :: struct {
