@@ -155,23 +155,24 @@ gpu_copy_to_texture :: (cmd: Gpu_Command_Buffer, dest_view_handle: Gpu_Texture_V
     return gpu_copy_to_texture(cmd, dest_view.texture, src_view.texture);
 }
 
-gpu_copy_to_texture :: (cmd: Gpu_Command_Buffer, dest: Gpu_Texture, src: Gpu_Texture) -> Gpu_Result {
+gpu_copy_to_texture :: (cmd: Gpu_Command_Buffer, dest: Gpu_Texture, src: Gpu_Texture, base_layer: u32 = 0, layer_count: u32 = 0) -> Gpu_Result {
     dest_texture := get_texture(dest);
     src_texture := get_texture(src);
     if !dest_texture || !src_texture then return .ERROR_INVALID_TEXTURE;
     vk_cmd_buff := get_cmd_buff(cmd);
+    actual_layer_count := ifx layer_count == 0 then src_texture.desc.layer_count else layer_count;
     region := VkImageCopy2.{
         srcSubresource = .{
             aspectMask = get_image_aspect_mask(src_texture.desc.format),
             mipLevel = 0,
-            baseArrayLayer = 0,
-            layerCount = 1, // #todo: pass layers in
+            baseArrayLayer = base_layer,
+            layerCount = actual_layer_count,
         },
         dstSubresource = .{
             aspectMask = get_image_aspect_mask(dest_texture.desc.format),
             mipLevel = 0,
-            baseArrayLayer = 0,
-            layerCount = 1, // #todo: pass layers in
+            baseArrayLayer = base_layer,
+            layerCount = actual_layer_count,
         },
         srcOffset = .{ x = 0, y = 0, z = 0 },
         dstOffset = .{ x = 0, y = 0, z = 0 },
