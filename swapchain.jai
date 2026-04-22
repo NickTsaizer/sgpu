@@ -360,7 +360,7 @@ cleanup_swapchain_image_views :: () {
 
 
 wait_next_frame :: () {
-    if cpu_frame_timeline > MAX_FRAMES_IN_FLIGHT {
+    if cpu_frame_timeline >= MAX_FRAMES_IN_FLIGHT {
         gpu_wait_semaphore(.{gpu_frame_timeline, cast(u64) max(0, cpu_frame_timeline.(s64) + 1 - MAX_FRAMES_IN_FLIGHT)});
     }
 }
