@@ -511,8 +511,41 @@ gpu_draw_indexed_instanced :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pi
     return .SUCCESS;
 }
 
+gpu_draw_indirect :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pixel_data: Gpu_Ptr, args: Gpu_Ptr) -> Gpu_Result {
+    vk_cmd_buff := get_cmd_buff(cmd);
+
+    vertex_offset := get_stage_offset(.VERTEX);
+    pixel_offset  := get_stage_offset(.PIXEL);
+    vkCmdPushConstants(vk_cmd_buff, vk_pipeline_layout, .VERTEX_BIT, vertex_offset, size_of(VkDeviceAddress), *vertex_data);
+    vkCmdPushConstants(vk_cmd_buff, vk_pipeline_layout, .FRAGMENT_BIT, pixel_offset,  size_of(VkDeviceAddress), *pixel_data);
+
+    result, indirect_buffer, indirect_offset := get_buffer_and_offset(args);
+    return_if_error(result);
+
+    vkCmdDrawIndirect(vk_cmd_buff, indirect_buffer, indirect_offset.(u64), 1, size_of(VkDrawIndirectCommand));
+
+    return .SUCCESS;
+}
+
 gpu_draw_indexed_indirect :: (cmd: Gpu_Command_Buffer, vertex_data: Gpu_Ptr, pixel_data: Gpu_Ptr, index_data: Gpu_Ptr, args: Gpu_Ptr) -> Gpu_Result {
-    // #todo
+    vk_cmd_buff := get_cmd_buff(cmd);
+
+    vertex_offset := get_stage_offset(.VERTEX);
+    pixel_offset := get_stage_offset(.PIXEL);
+    vkCmdPushConstants(vk_cmd_buff, vk_pipeline_layout, .VERTEX_BIT, vertex_offset, size_of(VkDeviceAddress), *vertex_data);
+    vkCmdPushConstants(vk_cmd_buff, vk_pipeline_layout, .FRAGMENT_BIT, pixel_offset, size_of(VkDeviceAddress), *pixel_data);
+
+    result, index_buffer, offset := get_buffer_and_offset(index_data);
+    return_if_error(result);
+
+    vkCmdBindIndexBuffer(vk_cmd_buff, index_buffer, offset.(VkDeviceSize), .UINT32);
+
+    result2, indirect_buffer, indirect_offset := get_buffer_and_offset(args);
+    return_if_error(result2);
+
+    vkCmdDrawIndexedIndirect(vk_cmd_buff, indirect_buffer, indirect_offset.(u64), 1, size_of(Gpu_Draw_Args));
+
+    return .SUCCESS;
 }
 
 gpu_draw_meshlets :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) -> Gpu_Result {
