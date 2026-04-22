@@ -3,59 +3,69 @@
 gpu_start_command_recording :: (queue_handle: Gpu_Queue) -> Gpu_Result, Gpu_Command_Buffer {
     // #TODO: should we do this on every command recording? uncertain.
     reclaim_completed_command_pools();
+    reclaim_garbage_resources();
 
     queue := get_queue(queue_handle);
 
     arena := *cmd_pools[queue.global_index];
 
-    if arena.available_pools.count == 0 {
-        if arena.all_pools.count >= MAX_COMMAND_POOLS {
-            return .ERROR_COMMAND_BUFFER_LIMIT_EXCEEDED, 0;
+    pool: *Command_Pool;
+    {
+        lock(*cmd_pool_locks[queue.global_index]);
+        defer unlock(*cmd_pool_locks[queue.global_index]);
+
+        if arena.available_pools.count == 0 {
+            if arena.all_pools.count >= MAX_COMMAND_POOLS {
+                return .ERROR_COMMAND_BUFFER_LIMIT_EXCEEDED, 0;
+            }
+
+            new_pool: VkCommandPool;
+
+            create_info := VkCommandPoolCreateInfo.{
+                flags = .TRANSIENT_BIT,
+                queueFamilyIndex = queue.vk_family,
+            };
+
+            vk_result := vkCreateCommandPool(vk_device, *create_info, null, *new_pool);
+            return_if_error(vk_result, 0);
+
+            new_buffer: VkCommandBuffer;
+
+            alloc_info := VkCommandBufferAllocateInfo.{
+                commandPool = new_pool,
+                level = .PRIMARY,
+                commandBufferCount = 1,
+            };
+
+            vk_result = vkAllocateCommandBuffers(vk_device, *alloc_info, *new_buffer);
+            return_if_error(vk_result, 0);
+
+            _, new_cmd_pool := bucket_array_add(*arena.all_pools, .{
+                vk_cmd_pool = new_pool,
+                vk_cmd_buff = new_buffer,
+            });
+            array_add(*arena.available_pools, new_cmd_pool);
         }
 
-        new_pool: VkCommandPool;
-
-        create_info := VkCommandPoolCreateInfo.{
-            flags = .TRANSIENT_BIT,
-            queueFamilyIndex = queue.vk_family,
-        };
-
-        vk_result := vkCreateCommandPool(vk_device, *create_info, null, *new_pool);
-        return_if_error(vk_result, 0);
-
-        new_buffer: VkCommandBuffer;
-
-        alloc_info := VkCommandBufferAllocateInfo.{
-            commandPool = new_pool,
-            level = .PRIMARY,
-            commandBufferCount = 1,
-        };
-
-        vk_result = vkAllocateCommandBuffers(vk_device, *alloc_info, *new_buffer);
-        return_if_error(vk_result, 0);
-
-        _, pool := bucket_array_add(*arena.all_pools, .{
-            vk_cmd_pool = new_pool,
-            vk_cmd_buff = new_buffer,
-        });
-        array_add(*arena.available_pools, pool);
+        pool = pop(*arena.available_pools);
     }
-
-    pool := pop(*arena.available_pools);
     // There should never be a null pool in the list of available pools.
     debug_assert(pool != null);
     pool.queue = queue_handle;
 
-    // find an empty slot in the live pools list
-    found, index := array_find(live_pools, null);
-    // the list is preallocated to the maximum number of possible live command lists so this should never fail.
-    debug_assert(found);
-
-    live_pools[index] = pool;
-
     cmd_buff_handle := cast(Gpu_Command_Buffer) (pool.vk_cmd_buff);
+    {
+        lock(*live_pools_lock);
+        defer unlock(*live_pools_lock);
 
-    table_add(*cmd_buffer_indices, cmd_buff_handle, index);
+        // find an empty slot in the live pools list
+        found, index := array_find(live_pools, null);
+        // the list is preallocated to the maximum number of possible live command lists so this should never fail.
+        debug_assert(found);
+
+        live_pools[index] = pool;
+        table_add(*cmd_buffer_indices, cmd_buff_handle, index);
+    }
 
     begin_info := VkCommandBufferBeginInfo.{
         flags = .ONE_TIME_SUBMIT_BIT
@@ -565,19 +575,28 @@ gpu_draw_meshlets :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u3
 }
 
 
-/** Queue resource for deletion when this command buffer finishes execution */
+/** Queue resource for deletion after this command buffer's submission completes AND all
+ * already-submitted work on other queues completes.
+ *
+ * Contract: the caller must ensure no NEW work referencing this resource will be submitted
+ * after this call, apart from `cmd` itself. The destroy waits for:
+ *   - `cmd`'s submission (not yet assigned a timeline value at enqueue time)
+ *   - every other queue's latest-submitted timeline value at submit time of `cmd`
+ *
+ * Staging on the pool (rather than snapshotting and appending globally now) is what makes
+ * this correct: at enqueue time we don't yet know the signal value `cmd` will be assigned,
+ * so we defer snapshot + global-append to submit_command_buffer.
+ */
 gpu_enqueue_destroy :: (cmd: Gpu_Command_Buffer, gpu_ptr: Gpu_Ptr) {
     pool := get_pool(cmd);
-    queue := get_queue(pool.queue);
-    garbage_list := *garbage_allocations[queue.global_index];
-    array_add(garbage_list, .{queue.timeline_value, gpu_ptr},, cpu_allocator);
+    // No lock needed: a given pool is owned by a single recording thread between
+    // gpu_start_command_recording and gpu_submit, so pool.staged_* is unshared during that window.
+    array_add(*pool.staged_allocations, gpu_ptr,, cpu_allocator);
 }
 
 gpu_enqueue_destroy :: (cmd: Gpu_Command_Buffer, texture: Gpu_Texture) {
     pool := get_pool(cmd);
-    queue := get_queue(pool.queue);
-    garbage_list := *garbage_textures[queue.global_index];
-    array_add(garbage_list, .{queue.timeline_value, texture},, cpu_allocator);
+    array_add(*pool.staged_textures, texture,, cpu_allocator);
 }
 
 #scope_module
@@ -588,6 +607,24 @@ Command_Pool :: struct {
     vk_cmd_pool: VkCommandPool;
     vk_cmd_buff: VkCommandBuffer;
     queue: Gpu_Queue;
+    last_submit_timeline_value: u64;
+
+    // Resources enqueued for destruction while this pool is being recorded. Promoted into
+    // the global garbage lists at submit time, once we know the signal value for this pool's
+    // submission (required so the destroy waits for the in-progress recording to actually run).
+    staged_allocations: [..] Gpu_Ptr;
+    staged_textures:    [..] Gpu_Texture;
+}
+
+// Per-queue timeline snapshot used to gate resource destruction. A resource is safe to free
+// once every queue's GPU-completed timeline value is >= the snapshot taken at enqueue time.
+Garbage_Allocation :: struct {
+    wait_values: [queues.count] u64;
+    gpu_ptr: Gpu_Ptr;
+}
+Garbage_Texture :: struct {
+    wait_values: [queues.count] u64;
+    texture: Gpu_Texture;
 }
 
 Command_Pool_Arena :: struct {
@@ -604,79 +641,83 @@ Garbage_Command_Pool :: struct {
     pool: *Command_Pool;
 }
 
-Garbage_Allocation :: struct {
-    // #todo: should we support multiple queues referencing this object or just a single one?
-    queue_submit_timeline_value: u64;
-    ptr: Gpu_Ptr;
-}
-
-Garbage_Texture :: struct {
-    // #todo: should we support multiple queues referencing this object or just a single one?
-    queue_submit_timeline_value: u64;
-    handle: Gpu_Texture;
-}
-
 live_pools: [MAX_COMMAND_POOLS * queues.count] *Command_Pool;
 cmd_buffer_indices: Table(Gpu_Command_Buffer, s64);
+live_pools_lock: Mutex;
 
 // #TODO: fixed size allocation but can resizeable count within that buffer.
 garbage_pools: [queues.count] [..] Garbage_Command_Pool;
 
-garbage_allocations: [queues.count] [..] Garbage_Allocation;
-garbage_textures: [queues.count] [..] Garbage_Texture;
+// Global garbage lists (not per-pool, not per-queue). A resource may have been used by
+// command buffers across multiple queues, so its destruction must wait for ALL of those
+// queues to have completed the timeline values recorded at enqueue time.
+garbage_allocations: [..] Garbage_Allocation;
+garbage_textures:    [..] Garbage_Texture;
+garbage_resources_lock: Mutex;
+
+cmd_pool_locks:     [queues.count] Mutex;  // protects cmd_pools[i] and garbage_pools[i]
 
 reclaim_completed_command_pools :: () {
     for * arena, queue_index : cmd_pools {
         queue := *queues[queue_index];
-        current_timeline_value: u64;
+        current_timeline_value: u64 = U64_MAX; // sentinel so an ignored error is obvious
         vk_result := vkGetSemaphoreCounterValue(vk_device, queue.timeline, *current_timeline_value);
         assert_vk_result(vk_result);
 
+        lock(*cmd_pool_locks[queue_index]);
+        defer unlock(*cmd_pool_locks[queue_index]);
+
         for garbage_pools[queue_index] {
-            if it.queue_submit_timeline_value < current_timeline_value {
-                vk_result = vkResetCommandPool(vk_device, it.pool.vk_cmd_pool, 0);
+            if it.queue_submit_timeline_value <= current_timeline_value {
+                pool := it.pool;
+
+                pool.last_submit_timeline_value = 0;
+
+                vk_result = vkResetCommandPool(vk_device, pool.vk_cmd_pool, 0);
                 assert_vk_result(vk_result);
 
-                array_add(*arena.available_pools, it.pool);
+                array_add(*arena.available_pools, pool);
                 remove it;
             }
+        }
+    }
+}
+
+reclaim_garbage_resources :: () {
+    completed: [queues.count] u64;
+    for q : 0..queues.count-1 {
+        vk_result := vkGetSemaphoreCounterValue(vk_device, queues[q].timeline, *completed[q]);
+        assert_vk_result(vk_result);
+    }
+
+    lock(*garbage_resources_lock);
+    defer unlock(*garbage_resources_lock);
+
+    for * garbage_allocations {
+        ready := true;
+        for q : 0..queues.count-1 if it.wait_values[q] > completed[q] { ready = false; break; }
+        if ready {
+            gpu_free(it.gpu_ptr);
+            remove it;
+        }
+    }
+    for * garbage_textures {
+        ready := true;
+        for q : 0..queues.count-1 if it.wait_values[q] > completed[q] { ready = false; break; }
+        if ready {
+            gpu_free(it.texture);
+            remove it;
         }
     }
 }
 
 collect_garbage_resources :: () {
-    for * arena, queue_index : cmd_pools {
-        queue := *queues[queue_index];
-        current_timeline_value: u64;
-        vk_result := vkGetSemaphoreCounterValue(vk_device, queue.timeline, *current_timeline_value);
-        assert_vk_result(vk_result);
-
-        for garbage_allocations[queue_index] {
-            if it.queue_submit_timeline_value < current_timeline_value {
-                gpu_free(it.ptr);
-
-                remove it;
-            }
-        }
-        for garbage_textures[queue_index] {
-            if it.queue_submit_timeline_value < current_timeline_value {
-                gpu_free(it.handle);
-
-                remove it;
-            }
-        }
-    }
+    reclaim_completed_command_pools();
+    reclaim_garbage_resources();
 }
 
 get_cmd_buff :: (cmd_buff_handle: Gpu_Command_Buffer) -> VkCommandBuffer {
     return cmd_buff_handle.(VkCommandBuffer);
-}
-
-get_cmd_buff_index :: (cmd_buff_handle: Gpu_Command_Buffer) -> s64 {
-    found, cmd_buff_index := table_find(*cmd_buffer_indices, cmd_buff_handle);
-    assert(found);
-
-    return cmd_buff_index;
 }
 
 Submit_Info :: struct {
@@ -688,17 +729,24 @@ Submit_Info :: struct {
 }
 
 submit_command_buffer :: (using submit_info: Submit_Info) {
-    index := get_cmd_buff_index(cmd_buff);
-    assert(index < live_pools.count);
-    pool := live_pools[index];
-    // #todo: propagate this error up.
-    debug_assert(pool != null);
+    index: s64;
+    pool: *Command_Pool;
+    {
+        lock(*live_pools_lock);
+        defer unlock(*live_pools_lock);
+
+        found, table_index := table_find(*cmd_buffer_indices, cmd_buff);
+        assert(found);
+        index = table_index;
+        assert(index < live_pools.count);
+        pool = live_pools[index];
+        // #todo: propagate this error up.
+        debug_assert(pool != null);
+    }
 
     vkEndCommandBuffer(pool.vk_cmd_buff);
 
     queue := get_queue(pool.queue);
-
-    queue_timeline_value := atomic_add(*queue.timeline_value, 1) + 1; // atomic_add returns the previous value.
 
     auto_release_temp();
     push_allocator(temp);
@@ -707,8 +755,7 @@ submit_command_buffer :: (using submit_info: Submit_Info) {
     all_signal_semaphores: [..] VkSemaphore;
     all_wait_values: [..] u64;
     all_wait_semaphores: [..] VkSemaphore;
-    array_add(*all_signal_values, queue.timeline_value);
-    array_add(*all_signal_semaphores, queue.timeline);
+
     for 0..signal_semaphores.count-1 {
         array_add(*all_signal_semaphores, signal_semaphores[it]);
         array_add(*all_signal_values, 0);
@@ -727,34 +774,91 @@ submit_command_buffer :: (using submit_info: Submit_Info) {
         array_add(*all_wait_values, it.value);
     }
 
-    timeline_info := VkTimelineSemaphoreSubmitInfo.{
-        waitSemaphoreValueCount = all_wait_values.count.(u32),
-        pWaitSemaphoreValues = all_wait_values.data,
-        signalSemaphoreValueCount = all_signal_values.count.(u32),
-        pSignalSemaphoreValues = all_signal_values.data,
-    };
+    queue_timeline_value: u64;
+    {
+        queue.timeline_value += 1;
+        queue_timeline_value = queue.timeline_value;
 
-    wait_stages := VkPipelineStageFlagBits.TOP_OF_PIPE_BIT;
-    cmd_buffers := VkCommandBuffer.[pool.vk_cmd_buff];
-    vk_submit_info := VkSubmitInfo.{
-        pNext = *timeline_info,
-        commandBufferCount = cmd_buffers.count.(u32),
-        pCommandBuffers = cmd_buffers.data,
-        signalSemaphoreCount = all_signal_semaphores.count.(u32),
-        pSignalSemaphores = all_signal_semaphores.data,
-        waitSemaphoreCount = all_wait_semaphores.count.(u32),
-        pWaitSemaphores = all_wait_semaphores.data,
-        pWaitDstStageMask = *wait_stages,
-    };
-    vkQueueSubmit(queue.vk_queue, 1, *vk_submit_info, VK_NULL_HANDLE);
+        array_add(*all_signal_values, queue_timeline_value);
+        array_add(*all_signal_semaphores, queue.timeline);
 
-    live_pools[index] = null;
-    array_add(*garbage_pools[queue.global_index], .{queue_timeline_value, pool});
-    table_remove(*cmd_buffer_indices, cmd_buff);
+        timeline_info := VkTimelineSemaphoreSubmitInfo.{
+            waitSemaphoreValueCount = all_wait_values.count.(u32),
+            pWaitSemaphoreValues = all_wait_values.data,
+            signalSemaphoreValueCount = all_signal_values.count.(u32),
+            pSignalSemaphoreValues = all_signal_values.data,
+        };
+
+        wait_stages := VkPipelineStageFlagBits.TOP_OF_PIPE_BIT;
+        cmd_buffers := VkCommandBuffer.[pool.vk_cmd_buff];
+        vk_submit_info := VkSubmitInfo.{
+            pNext = *timeline_info,
+            commandBufferCount = cmd_buffers.count.(u32),
+            pCommandBuffers = cmd_buffers.data,
+            signalSemaphoreCount = all_signal_semaphores.count.(u32),
+            pSignalSemaphores = all_signal_semaphores.data,
+            waitSemaphoreCount = all_wait_semaphores.count.(u32),
+            pWaitSemaphores = all_wait_semaphores.data,
+            pWaitDstStageMask = *wait_stages,
+        };
+        submit_result := vkQueueSubmit(queue.vk_queue, 1, *vk_submit_info, VK_NULL_HANDLE);
+
+        pool.last_submit_timeline_value = queue_timeline_value;
+    }
+
+    // Promote staged destroys into the global garbage lists now that we know this submission's
+    // signal value. wait_values[this_queue] = queue_timeline_value (the value the GPU will
+    // signal when this command buffer finishes); wait_values[other_queue] = that queue's
+    // latest submitted value (already committed, safe to read).
+    if pool.staged_allocations.count || pool.staged_textures.count {
+        wait_values: [queues.count] u64;
+        for q : 0..queues.count-1 wait_values[q] = queues[q].timeline_value;
+        wait_values[queue.global_index] = queue_timeline_value;
+
+        lock(*garbage_resources_lock);
+        defer unlock(*garbage_resources_lock);
+
+        for pool.staged_allocations {
+            entry: Garbage_Allocation;
+            entry.wait_values = wait_values;
+            entry.gpu_ptr = it;
+            array_add(*garbage_allocations, entry,, cpu_allocator);
+        }
+        for pool.staged_textures {
+            entry: Garbage_Texture;
+            entry.wait_values = wait_values;
+            entry.texture = it;
+            array_add(*garbage_textures, entry,, cpu_allocator);
+        }
+        array_reset_keeping_memory(*pool.staged_allocations);
+        array_reset_keeping_memory(*pool.staged_textures);
+    }
+
+    // Publish the pool transition (live -> garbage) atomically under cmd_pool_lock.
+    // Holding cmd_pool_lock here prevents reclaim_completed_command_pools from observing
+    // the pool, recycling it, and handing it back to a new recording thread (which would
+    // then do table_add on the same VkCommandBuffer key before we got to table_remove).
+    {
+        lock(*cmd_pool_locks[queue.global_index]);
+        defer unlock(*cmd_pool_locks[queue.global_index]);
+
+        {
+            lock(*live_pools_lock);
+            defer unlock(*live_pools_lock);
+            live_pools[index] = null;
+            table_remove(*cmd_buffer_indices, cmd_buff);
+        }
+
+        array_add(*garbage_pools[queue.global_index], .{queue_timeline_value, pool});
+    }
 }
 
 get_pool :: (cmd_buff: Gpu_Command_Buffer) -> *Command_Pool {
-    index := get_cmd_buff_index(cmd_buff);
+    lock(*live_pools_lock);
+    defer unlock(*live_pools_lock);
+
+    found, index := table_find(*cmd_buffer_indices, cmd_buff);
+    assert(found);
     assert(index < live_pools.count);
     pool := live_pools[index];
 

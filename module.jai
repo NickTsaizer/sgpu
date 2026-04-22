@@ -566,6 +566,11 @@ gpu_init :: (optional_features: Gpu_Optional_Features = .DESCRIPTOR_BUFFER) -> G
     gpu_init_timestamps();
 
     init(*memory_mutex, "Memory Mutex");
+    init(*live_pools_lock, "Live Command Pools Lock");
+    init(*garbage_resources_lock, "Garbage Resources Lock");
+    for * cmd_pool_locks {
+        init(it, "Command Pool Arena Lock");
+    }
 
     return .SUCCESS;
 }
@@ -609,8 +614,8 @@ gpu_wait_idle :: () {
     vkDeviceWaitIdle(vk_device);
 }
 
-gpu_queue_wait_idle :: (queue: Gpu_Queue) {
-    queue := get_queue(queue);
+gpu_queue_wait_idle :: (queue_handle: Gpu_Queue) {
+    queue := get_queue(queue_handle);
     vkQueueWaitIdle(queue.vk_queue);
 }
 
