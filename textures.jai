@@ -1,6 +1,6 @@
 #scope_export
 
-gpu_create_texture :: (desc: Gpu_Texture_Desc, optional_signal_texture_ready: [] Gpu_Timeline_Pair = .[]) -> Gpu_Result, Gpu_Texture {
+gpu_create_texture :: (desc: Gpu_Texture_Desc, optional_signal_texture_ready: [] Gpu_Timeline_Pair = .[], label: string = "") -> Gpu_Result, Gpu_Texture {
     image_create_info := VkImageCreateInfo.{
         format = desc.format.(VkFormat),
         extent = VkExtent3D.{desc.dimensions[0], desc.dimensions[1], desc.dimensions[2]},
@@ -30,6 +30,8 @@ gpu_create_texture :: (desc: Gpu_Texture_Desc, optional_signal_texture_ready: []
     if handle == 0 {
         return .ERROR_TEXTURE_LIMIT_EXCEEDED, 0;
     }
+
+    #if DEBUG_MARKERS then set_object_debug_name(.IMAGE, cast(u64) image, label);
 
     transfer_queue := gpu_get_queue(.MAIN, 0);
     result, cmd_buff := gpu_start_command_recording(transfer_queue);
@@ -165,7 +167,7 @@ gpu_texture_desc :: (view_handle: Gpu_Texture_View) -> bool, Gpu_Texture_Desc {
     return true, texture.desc;
 }
 
-gpu_create_sampler :: (desc: Gpu_Sampler_Desc) -> Gpu_Sampler {
+gpu_create_sampler :: (desc: Gpu_Sampler_Desc, label: string = "") -> Gpu_Sampler {
     create_info := VkSamplerCreateInfo.{
         minFilter = desc.min_filter.(VkFilter),
         magFilter = desc.mag_filter.(VkFilter),
@@ -198,6 +200,8 @@ gpu_create_sampler :: (desc: Gpu_Sampler_Desc) -> Gpu_Sampler {
     }
 
     write_sampler_descriptor(vk_sampler, handle);
+
+    #if DEBUG_MARKERS then set_object_debug_name(.SAMPLER, cast(u64) vk_sampler, label);
 
     return handle;
 }

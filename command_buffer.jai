@@ -70,6 +70,24 @@ gpu_submit :: (cmd_buff: Gpu_Command_Buffer, signals: [] Gpu_Timeline_Pair = .[]
     submit_command_buffer(.{cmd_buff = cmd_buff, signal_timelines = signals, wait_timelines = waits });
 }
 
+gpu_cmd_begin_debug_marker :: (cmd: Gpu_Command_Buffer, label: string) {
+    #if DEBUG_MARKERS {
+        label_info := VkDebugUtilsLabelEXT.{
+            pLabelName = to_c_string(label,, temp),
+        };
+        vkCmdBeginDebugUtilsLabelEXT(get_cmd_buff(cmd), *label_info);
+    }
+}
+
+gpu_cmd_end_debug_marker :: (cmd: Gpu_Command_Buffer) {
+    #if DEBUG_MARKERS then vkCmdEndDebugUtilsLabelEXT(get_cmd_buff(cmd));
+}
+
+gpu_scoped_debug_label :: (cmd: Gpu_Command_Buffer, label: string) #expand {
+    gpu_cmd_begin_debug_marker(cmd, label);
+    defer gpu_cmd_end_debug_marker(cmd);
+}
+
 gpu_memcpy :: (cmd: Gpu_Command_Buffer, dest: Gpu_Ptr, src: Gpu_Ptr, num_bytes: s64) -> Gpu_Result {
     cmd_buff := get_cmd_buff(cmd);
 

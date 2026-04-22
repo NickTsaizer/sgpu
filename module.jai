@@ -6,7 +6,9 @@
     // Optionally includes an api for taking render doc captures
     RENDER_CAPTURE := false,
     // Optionally includes a slang shader compiler submodule
-    SLANG_COMPILER := true
+    SLANG_COMPILER := true,
+    // Optionally enables debug command buffer markers and object markers
+    DEBUG_MARKERS := true
 );
 
 Gpu_Pipeline :: #type,distinct s64;
@@ -714,6 +716,9 @@ create_instance :: () -> Gpu_Result {
         array_add(*enabled_extensions, VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
         array_add(*enabled_extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
+	#if DEBUG_MARKERS {
+        array_add(*enabled_extensions, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
 
     {
         count: u32;
@@ -1231,6 +1236,11 @@ create_device :: () -> Gpu_Result {
         if is_optional_ext_supported(.MESH_SHADERS) {
             #insert #run generate_get_device_proc_addr("vkCmdDrawMeshTasksEXT");
         }
+        #if DEBUG_MARKERS {
+            #insert #run generate_get_device_proc_addr("vkSetDebugUtilsObjectNameEXT");
+            #insert #run generate_get_device_proc_addr("vkCmdBeginDebugUtilsLabelEXT");
+            #insert #run generate_get_device_proc_addr("vkCmdEndDebugUtilsLabelEXT");
+        }
     }
 
     return .SUCCESS;
@@ -1327,6 +1337,23 @@ vkCmdBeginRenderingKHR : PFN_vkCmdBeginRenderingKHR;
 vkCmdEndRenderingKHR : PFN_vkCmdEndRenderingKHR;
 
 vkCmdDrawMeshTasksEXT: PFN_vkCmdDrawMeshTasksEXT;
+
+#if DEBUG_MARKERS {
+    vkSetDebugUtilsObjectNameEXT: PFN_vkSetDebugUtilsObjectNameEXT;
+    vkCmdBeginDebugUtilsLabelEXT: PFN_vkCmdBeginDebugUtilsLabelEXT;
+    vkCmdEndDebugUtilsLabelEXT:   PFN_vkCmdEndDebugUtilsLabelEXT;
+
+    set_object_debug_name :: (object_type: VkObjectType, handle: u64, name: string) {
+        if !name then return;
+        auto_release_temp();
+        name_info := VkDebugUtilsObjectNameInfoEXT.{
+            objectType   = object_type,
+            objectHandle = handle,
+            pObjectName  = to_c_string(name,, temp),
+        };
+        vkSetDebugUtilsObjectNameEXT(vk_device, *name_info);
+    }
+}
 
 #if VALIDATION {
     vk_debug_callback_handle: VkDebugReportCallbackEXT;
