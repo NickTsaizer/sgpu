@@ -33,7 +33,7 @@ available on windows.
  //     symbols were created alongside VkMemAlloc_DEBUG + it has debug asserts and logging.
  // - if USE_LOCAL_VULKAN_DYNAMIC_LIB is true, then the local vulkan-1.dll will be used. otherwise, your program
  //     will depend on the system's vulkan-1.dll.
-#module_parameters(MEMORY_ALLOCATOR_DEBUG := true, USE_LOCAL_VULKAN_DYNAMIC_LIB := true);
+#module_parameters(MEMORY_ALLOCATOR_DEBUG := false, USE_LOCAL_VULKAN_DYNAMIC_LIB := true);
 
 
 VK_NULL_HANDLE                    :: null;
