@@ -20,6 +20,9 @@ gpu_array_new :: (count: s64, $type: Type, memory_type: Memory_Type = .DEFAULT) 
 }
 
 gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void, gpu: Gpu_Ptr) {
+    lock(*memory_mutex);
+    defer unlock(*memory_mutex);
+
     memory_flags: VkMemoryPropertyFlagBits;
     memory_usage_flags: VmaMemoryUsage;
     if #complete memory_type == {
@@ -79,6 +82,9 @@ gpu_malloc :: (size: s64, memory_type: Memory_Type = .DEFAULT) -> (mapped: *void
 }
 
 gpu_free :: (ptr: *void) {
+    lock(*memory_mutex);
+    defer unlock(*memory_mutex);
+
     removed, alloc := table_remove(*cpu_allocations, ptr);
     if removed {
         vmaDestroyBuffer(vma, alloc.vk_buffer, alloc.allocation);
@@ -92,6 +98,9 @@ gpu_free :: (ptr: *void) {
 }
 
 gpu_free :: (gpu_ptr: Gpu_Ptr) {
+    lock(*memory_mutex);
+    defer unlock(*memory_mutex);
+
     removed, alloc := table_remove(*gpu_allocations, gpu_ptr);
     if removed {
         vmaDestroyBuffer(vma, alloc.vk_buffer, alloc.allocation);
@@ -102,6 +111,9 @@ gpu_free :: (gpu_ptr: Gpu_Ptr) {
 }
 
 gpu_host_to_device_ptr :: (host: *void) -> Gpu_Ptr {
+    lock(*memory_mutex);
+    defer unlock(*memory_mutex);
+
     found, alloc := table_find(*allocations, host);
     if found {
         return alloc.gpu_ptr;
@@ -134,6 +146,8 @@ Gpu_Memory_Range :: struct {
 // Needs profiling.
 gpu_memory_ranges: [..] Gpu_Memory_Range;
 
+memory_mutex: Mutex;
+
 find_memory_range :: (ptr: Gpu_Ptr) -> Gpu_Result, Gpu_Memory_Range {
     for gpu_memory_ranges {
         if ptr >= it.start && ptr < it.end then return .SUCCESS, it;
@@ -152,6 +166,9 @@ remove_gpu_memory_range :: (start_ptr: Gpu_Ptr) -> bool {
 }
 
 get_buffer :: (gpu_ptr: Gpu_Ptr) -> VkBuffer {
+    lock(*memory_mutex);
+    defer unlock(*memory_mutex);
+
     found, alloc := table_find(*gpu_allocations, gpu_ptr);
     if !found {
         return VK_NULL_HANDLE;
@@ -160,13 +177,18 @@ get_buffer :: (gpu_ptr: Gpu_Ptr) -> VkBuffer {
 }
 
 get_buffer_and_offset :: (gpu_ptr: Gpu_Ptr) -> Gpu_Result, VkBuffer, s64 {
+    lock(*memory_mutex);
+    defer unlock(*memory_mutex);
+
     result, range := find_memory_range(gpu_ptr);
     if result != .SUCCESS then return result, VK_NULL_HANDLE, 0;
     debug_assert(range.start != 0);
 
-    vk_buffer := get_buffer(range.start);
-    debug_assert(vk_buffer != VK_NULL_HANDLE);
-    return .SUCCESS, vk_buffer, (gpu_ptr - range.start).(s64);
+    found, alloc := table_find(*gpu_allocations, range.start);
+    debug_assert(found);
+    debug_assert(alloc.vk_buffer != VK_NULL_HANDLE);
+    return .SUCCESS, alloc.vk_buffer, (gpu_ptr - range.start).(s64);
 }
 
 #import "Hash_Table";
+#import "Thread";
