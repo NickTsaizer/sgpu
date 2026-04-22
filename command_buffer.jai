@@ -333,7 +333,6 @@ gpu_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions: [3] u32) {
 }
 
 gpu_indirect_dispatch :: (cmd: Gpu_Command_Buffer, data: Gpu_Ptr, dimensions_gpu: Gpu_Ptr) -> Gpu_Result {
-    // not yet tested
     vk_cmd_buff := get_cmd_buff(cmd);
 
     result, indirect_buffer, offset := get_buffer_and_offset(dimensions_gpu);

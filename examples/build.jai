@@ -10,6 +10,7 @@
     compile_example("03_hello_square");
     compile_example("04_mesh_shaders");
     compile_example("textures");
+    compile_example("05_indirect_dispatch");
 
     copy_module_libraries_to_target("bin");
 }
