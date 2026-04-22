@@ -357,6 +357,7 @@ Gpu_Optional_Features :: enum_flags {
     STORAGE_PUSH_CONSTANT_8 :: 1 << 6;
     MESH_SHADERS            :: 1 << 7;
     SHADER_CLOCK            :: 1 << 8;
+    SHADER_ATOMIC_FLOATS    :: 1 << 9;
 
     // -- nyi --
     RAY_TRACING             ;
@@ -831,6 +832,11 @@ create_device :: () -> Gpu_Result {
             name = VK_KHR_SHADER_CLOCK_EXTENSION_NAME,
         };
     }
+    if enable_feature(requested_optional_features, .SHADER_ATOMIC_FLOATS) {
+        optional_extensions[Optional_Extension.SHADER_ATOMIC_FLOATS] = .{
+            name = VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
+        };
+    }
 
     result: VkResult;
 
@@ -1105,6 +1111,16 @@ create_device :: () -> Gpu_Result {
             chain = *shader_clock;
         }
 
+        if enable_feature(requested_optional_features, .SHADER_ATOMIC_FLOATS) {
+            shader_float_atomics := VkPhysicalDeviceShaderAtomicFloatFeaturesEXT.{
+                pNext = chain,
+                shaderBufferFloat32Atomics = VK_TRUE,
+                shaderBufferFloat32AtomicAdd = VK_TRUE,
+                shaderSharedFloat32Atomics = VK_TRUE,
+                shaderSharedFloat32AtomicAdd = VK_TRUE,
+            };
+            chain = *shader_float_atomics;
+        }
 
         vk12_features := VkPhysicalDeviceVulkan12Features.{
             pNext = chain,
@@ -1262,6 +1278,7 @@ Optional_Extension :: enum {
     DESCRIPTOR_BUFFER :: 0;
     MESH_SHADERS      :: 1;
     SHADER_CLOCK      :: 2;
+    SHADER_ATOMIC_FLOATS :: 3;
 }
 
 Optional_Extension_Info :: struct {
