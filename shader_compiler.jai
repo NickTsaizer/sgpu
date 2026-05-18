@@ -1,6 +1,6 @@
 #scope_export
 
-compile_shader :: (shader_path: string, output_directory: string = "", debug_symbols: bool = false) -> bool, [] u8 {
+compile_shader :: (shader_path: string, output_directory: string = "", debug_symbols: bool = false, file_system: *Shader_VFS = null) -> bool, [] u8 {
     if !global_session then create_session();
 
     auto_release_temp();
@@ -66,6 +66,7 @@ compile_shader :: (shader_path: string, output_directory: string = "", debug_sym
         searchPathCount = 1,
         compilerOptionEntries = options.data,
         compilerOptionEntryCount = xx options.count,
+        fileSystem = xx file_system
     };
 
     session: *slang.ISession;
@@ -122,7 +123,7 @@ compile_shader :: (shader_path: string, output_directory: string = "", debug_sym
     return true, spirv_code_raw;
 }
 
-#scope_file
+#scope_module
 
 log_diagnostic_blob :: (blob: *slang.IBlob) {
     diagnostic_string := string.{

@@ -643,6 +643,7 @@ gpu_get_queue :: (queue_type: Gpu_Queue_Type, queue_index: u32) -> Gpu_Queue {
 
 #if SLANG_COMPILER {
     #load "shader_compiler.jai";
+    #load "shader_vfs.jai";
 }
 
 #scope_module
