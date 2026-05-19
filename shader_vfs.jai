@@ -12,8 +12,7 @@
 //   }
 //   vfs := make_shader_vfs(load_src);
 //   defer cleanup_shader_vfs(vfs);
-//   ok, spirv := compile_shader("main.slang", "", false,
-//       cast(*slang.ISlangFileSystem, vfs));
+//   ok, spirv := compile_shader("main.slang", "", false, vfs);
 
 Load_Callback :: #type (path: string) -> string;
 
@@ -39,7 +38,7 @@ make_shader_vfs :: (callback: Load_Callback) -> *Shader_VFS {
 }
 
 cleanup_shader_vfs :: (vfs: *Shader_VFS) {
-    vfs_release(xx vfs);
+    free(vfs);
 }
 
 // ---- Shader_File_Blob (implements ISlangBlob) ----
@@ -105,6 +104,8 @@ vfs_load_file :: (this: *slang.ISlangFileSystem, path: *u8, outBlob: **slang.ISl
         blob.data = data_ptr;
         blob.size = cast(u64, source.count);
 
+        free(source.data);  // callback-owned data, copied into blob
+
         outBlob.* = xx blob;
 
         return VFS_OK;
@@ -124,9 +125,16 @@ blob_add_ref :: (this: *slang.ISlangUnknown) -> u32 #cpp_method {
 }
 
 blob_release :: (this: *slang.ISlangUnknown) -> u32 #cpp_method {
-    blob: *Shader_File_Blob = xx this;
-    blob.refcount -= 1;
-    return blob.refcount;
+    ctx: #Context;
+    push_context ctx {
+        blob: *Shader_File_Blob = xx this;
+        blob.refcount -= 1;
+        if blob.refcount == 0 {
+            free(blob);
+            return 0;
+        }
+        return blob.refcount;
+    }
 }
 
 blob_get_buffer_pointer :: (this: *slang.ISlangBlob) -> *void #cpp_method {
