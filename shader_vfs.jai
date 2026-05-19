@@ -6,9 +6,9 @@
 // #include / import directives from in-memory sources instead of disk.
 //
 // Usage:
-//   load_src :: (path: string) -> string {
-//       asset := get_asset(Shader_Text, Name.from_path(path));
-//       return asset.code;
+//   load_src :: (path: string) -> string { 
+//        return get_asset(path); // Some callback that return a shader code by it's path. 
+//                                // It can be called with non-existant paths due to explorative nature of the slang compiler!
 //   }
 //   vfs := make_shader_vfs(load_src);
 //   defer cleanup_shader_vfs(vfs);
