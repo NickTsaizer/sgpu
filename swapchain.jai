@@ -311,7 +311,7 @@ create_surface :: () {
             assert(false, "todo");
         } else if native_window_type == .X11 {
             create_info := VkXlibSurfaceCreateInfoKHR.{
-                display = XOpenDisplay(null),
+                dpy = XOpenDisplay(null),
                 window = native_window_handle.(Window)
             };
 

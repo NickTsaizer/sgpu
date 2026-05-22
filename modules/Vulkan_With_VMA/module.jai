@@ -104,7 +104,11 @@ VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
     }
 } else #if OS == .LINUX {
     #load "generated_linux.jai";
-    #load "linux_extras.jai";
+    #import "X11";
+
+    xcb_connection_t :: struct {};
+    xcb_window_t :: u32;
+    xcb_visualid_t :: u32;
 
     #if MEMORY_ALLOCATOR_DEBUG {
         vkmemalloc :: #library,no_dll "linux/VkMemAlloc_DEBUG";
@@ -122,7 +126,6 @@ VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
 
 } else #if OS == .MACOS {
     #load "generated_macos.jai";
-    #load "macos_extras.jai";
 
     #if MEMORY_ALLOCATOR_DEBUG {
         vkmemalloc :: #library,no_dll "mac/VkMemAlloc_DEBUG";
