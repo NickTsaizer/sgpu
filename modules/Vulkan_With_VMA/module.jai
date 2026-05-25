@@ -80,10 +80,8 @@ VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
 
 #if OS == .WINDOWS {
     #load "generated_windows.jai";
+    #load "generated_funcs_windows.jai";
     #load "windows_extras.jai";
-
-    vkCreateWin32SurfaceKHR :: (instance: VkInstance, pCreateInfo: *VkWin32SurfaceCreateInfoKHR, pAllocator: *VkAllocationCallbacks, pSurface: *VkSurfaceKHR) -> VkResult #foreign libvulkan;
-    vkGetPhysicalDeviceWin32PresentationSupportKHR :: (physicalDevice: VkPhysicalDevice, queueFamilyIndex: u32) -> VkBool32 #foreign libvulkan;
 
 #scope_module // -------------------------------------------------------------------------------------------- { MODULE }
 
@@ -104,6 +102,7 @@ VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
     }
 } else #if OS == .LINUX {
     #load "generated_linux.jai";
+    #load "generated_funcs_linux.jai";
     #import "X11";
 
     xcb_connection_t :: struct {};
@@ -126,6 +125,7 @@ VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
 
 } else #if OS == .MACOS {
     #load "generated_macos.jai";
+    #load "generated_funcs_macos.jai";
 
     #if MEMORY_ALLOCATOR_DEBUG {
         vkmemalloc :: #library,no_dll "mac/VkMemAlloc_DEBUG";
@@ -146,3 +146,6 @@ VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
 #scope_module // -------------------------------------------------------------------------------------------- { MODULE }
 
 size_t  :: u64;
+
+// Only function loaded directly from libvulkan — everything else via load_*_proc_addresses.
+vkGetInstanceProcAddr :: (instance: VkInstance, pName: *u8) -> PFN_vkVoidFunction #foreign libvulkan;

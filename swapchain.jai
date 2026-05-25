@@ -80,6 +80,10 @@ gpu_destroy_swapchain :: () {
 
     vkDestroySwapchainKHR(vk_device, vk_swapchain, null);
     destroy_surface();
+
+    array_free(swapchain_images);
+    array_free(swapchain_textures);
+    array_free(swapchain_views);
 }
 
 gpu_swapchain_acquire :: () -> Gpu_Result, Gpu_Texture_View {
@@ -313,16 +317,13 @@ recreate_swapchain :: () {
 }
 
 create_surface :: () {
-    #if OS == .WINDOWS {
+        #if OS == .WINDOWS {
         assert(native_window_type == .WIN32);
 
         create_info := VkWin32SurfaceCreateInfoKHR.{
             hinstance = GetModuleHandleA(null),
             hwnd = native_window_handle.(HWND),
         };
-        if !vkCreateWin32SurfaceKHR {
-            vkCreateWin32SurfaceKHR = cast(PFN_vkCreateWin32SurfaceKHR) vkGetInstanceProcAddr(vk_instance, "vkCreateWin32SurfaceKHR");
-        }
         vk_result := vkCreateWin32SurfaceKHR(vk_instance, *create_info, null, *vk_surface);
         assert_vk_result(vk_result);
     } else #if OS == .LINUX {
@@ -335,10 +336,6 @@ create_surface :: () {
             surface_info.display = native_display;
             surface_info.surface = native_surface;
 
-            if !vkCreateWaylandSurfaceKHR {
-                vkCreateWaylandSurfaceKHR = cast(PFN_vkCreateWaylandSurfaceKHR) vkGetInstanceProcAddr(vk_instance, "vkCreateWaylandSurfaceKHR");
-            }
-
             vk_result := vkCreateWaylandSurfaceKHR(vk_instance, *surface_info, null, *vk_surface);
             assert_vk_result(vk_result);
 
@@ -350,9 +347,6 @@ create_surface :: () {
                 window = native_window_handle.(Window)
             };
 
-            if !vkCreateXlibSurfaceKHR {
-                vkCreateXlibSurfaceKHR = cast(PFN_vkCreateXlibSurfaceKHR) vkGetInstanceProcAddr(vk_instance, "vkCreateXlibSurfaceKHR");
-            }
             vk_result := vkCreateXlibSurfaceKHR(vk_instance, *create_info, null, *vk_surface);
             assert_vk_result(vk_result);
         }
@@ -469,12 +463,8 @@ acquire_semaphore_index: u64;
 
 #if OS == .WINDOWS {
     #import "Windows";
-
-    vkCreateWin32SurfaceKHR: PFN_vkCreateWin32SurfaceKHR;
 } else #if OS == .LINUX {
     #import "X11";
-    vkCreateXlibSurfaceKHR: PFN_vkCreateXlibSurfaceKHR;
-    vkCreateWaylandSurfaceKHR: PFN_vkCreateWaylandSurfaceKHR;
 } else #if OS == .MACOS {
     #import "Objective_C";
     #import "Objective_C/AppKit";

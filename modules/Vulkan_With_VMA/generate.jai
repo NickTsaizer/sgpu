@@ -14,12 +14,15 @@ vulkan_h_location               :: "source/vulkan/vulkan.h";
 #if OS == .WINDOWS {
     VULKAN_LIB_PATH :: "libs/win";
     OUTPUT_LIB_PATH :: "win/";
+    GENERATED_FUNC_FILE :: "generated_funcs_windows.jai";
 } else #if OS == .MACOS {
     VULKAN_LIB_PATH :: "libs/mac";
     OUTPUT_LIB_PATH :: "mac/";
+    GENERATED_FUNC_FILE :: "generated_funcs_macos.jai";
 } else #if OS == .LINUX {
     VULKAN_LIB_PATH :: "libs/linux";
     OUTPUT_LIB_PATH :: "linux/";
+    GENERATED_FUNC_FILE :: "generated_funcs_linux.jai";
 }
 
 #if AT_COMPILE_TIME {
@@ -157,6 +160,7 @@ generate_bindings :: () -> bool {
             // Change the library name to be the same on all platforms
             // so that we don't have to generate identical bindings for every platform just because the library name is different.
             context.generator.libraries[0].identifier = "libvulkan";
+            generate_funcs();
         };
 
         visitor = vulkan_visitor;
@@ -173,16 +177,45 @@ struct_type_decl: *Enum;
 vulkan_visitor :: (decl: *Declaration, parent_decl: *Declaration) -> Declaration_Visit_Result {
     // Omit header definitions (ex: VULKAN_H_)
     if decl.kind == .MACRO_DEFINITION && ends_with(decl.name, "_H_") {
-        // print("MACRO_DEFINITION removed: %\n", decl.name);
         decl.decl_flags |= .OMIT_FROM_OUTPUT;
         return .STOP;
     }
 
     // Omit our OMIT_LIST
     if !parent_decl && array_find(OMIT_LIST, decl.name) {
-        //print("OMIT_LIST: %\n", decl.name);
         decl.decl_flags |= .OMIT_FROM_OUTPUT;
         return .STOP;
+    }
+
+    // ---- Function categorization for runtime loading ----
+    // Keep VMA functions as direct #foreign (they link to vkmemalloc, not libvulkan).
+    if decl.kind == .FUNCTION && begins_with(decl.name, "vma") {
+        return .RECURSE;  // keep as #foreign vkmemalloc
+    }
+    if decl.type && decl.type.type_of_function {
+        type := decl.type.type_of_function;
+        if type.arguments.count > 0 && type.arguments[0].type.type_of_typedef {
+            type_name := type.arguments[0].type.type_of_typedef.name;
+            if (type_name == "VkDevice" || type_name == "VkQueue" || type_name == "VkCommandBuffer") && decl.name != "vkGetDeviceProcAddr" {
+                array_add(*device_funcs, decl.name);
+            } else if ((type_name == "VkInstance" || type_name == "VkPhysicalDevice") || decl.name == "vkGetDeviceProcAddr") && decl.name != "vkGetInstanceProcAddr" {
+                array_add(*instance_funcs, decl.name);
+            }
+        }
+        if decl.kind == .FUNCTION {
+            // Omit #foreign libvulkan declaration — loaded at runtime instead.
+            decl.decl_flags |= .OMIT_FROM_OUTPUT;
+        }
+    }
+    // Catch pre-instance functions exposed as PFN_ types.
+    if decl.name == {
+        case "PFN_vkCreateInstance"; #through;
+        case "PFN_vkDebugUtilsMessengerCallbackEXT"; #through;
+        case "PFN_vkDeviceMemoryReportCallbackEXT"; #through;
+        case "PFN_vkEnumerateInstanceExtensionProperties"; #through;
+        case "PFN_vkEnumerateInstanceLayerProperties"; #through;
+        case "PFN_vkEnumerateInstanceVersion";
+            array_add(*loader_funcs, slice(decl.name, 4, decl.name.count - 4));
     }
 
     if decl.kind == .ENUM {
@@ -319,6 +352,81 @@ get_sType_default_value_from_struct_name :: (name: string) -> string {
     }
 
     return builder_to_string(*builder);
+}
+
+// ---------------------------------------------------------------------------
+// Runtime function pointer loading — generates generated_funcs_*.jai
+// ---------------------------------------------------------------------------
+device_funcs: [..] string;
+instance_funcs: [..] string;
+loader_funcs: [..] string;
+
+generate_funcs :: () {
+    builder: String_Builder;
+    init_string_builder(*builder);
+
+    write_func_variable_declaration :: (builder: *String_Builder, func_name: string) {
+        append(builder, func_name);
+        append(builder, ": PFN_");
+        append(builder, func_name);
+        append(builder, ";\n");
+    }
+
+    write_func_variable_assignment_device :: (builder: *String_Builder, func_name: string, prefix := "") {
+        append(builder, prefix);
+        append(builder, func_name);
+        append(builder, " = xx vkGetDeviceProcAddr(device, \"");
+        append(builder, func_name);
+        append(builder, "\");\n");
+    }
+    write_func_variable_assignment_instance :: (builder: *String_Builder, func_name: string, prefix := "") {
+        append(builder, prefix);
+        append(builder, func_name);
+        append(builder, " = xx vkGetInstanceProcAddr(instance, \"");
+        append(builder, func_name);
+        append(builder, "\");\n");
+    }
+    write_func_variable_assignment_loader :: (builder: *String_Builder, func_name: string, prefix := "") {
+        append(builder, prefix);
+        append(builder, func_name);
+        append(builder, " = xx vkGetInstanceProcAddr(null, \"");
+        append(builder, func_name);
+        append(builder, "\");\n");
+    }
+
+    for loader_funcs { write_func_variable_declaration(*builder, it); }
+    for instance_funcs { write_func_variable_declaration(*builder, it); }
+    for device_funcs { write_func_variable_declaration(*builder, it); }
+
+    append(*builder, "\n\nDevice_VTable :: struct {\n");
+    for device_funcs {
+        append(*builder, "    ");
+        write_func_variable_declaration(*builder, it);
+    }
+    append(*builder, "}\n");
+
+    append(*builder, "\nload_proc_addresses_vtable :: (device: VkDevice, vtable: *Device_VTable) {\n");
+    for device_funcs { write_func_variable_assignment_device(*builder, it, "    vtable."); }
+    append(*builder, "}\n");
+
+    append(*builder, "\nload_device_proc_addresses :: (device: VkDevice) {\n");
+    for device_funcs { write_func_variable_assignment_device(*builder, it, "    "); }
+    append(*builder, "}\n");
+
+    append(*builder, "\nload_instance_proc_addresses :: (instance: VkInstance) {\n");
+    for instance_funcs { write_func_variable_assignment_instance(*builder, it, "    "); }
+    for device_funcs { write_func_variable_assignment_instance(*builder, it, "    "); }
+    append(*builder, "}\n");
+
+    append(*builder, "\nload_global_proc_addresses :: () {\n\n");
+    for loader_funcs { write_func_variable_assignment_loader(*builder, it, "    "); }
+    append(*builder, "}\n");
+
+    if GENERATED_FUNC_FILE == "" {
+        log_error("GENERATED_FUNC_FILE not set for this platform");
+        return;
+    }
+    success := write_entire_file(GENERATED_FUNC_FILE, *builder);
 }
 
 #scope_file
