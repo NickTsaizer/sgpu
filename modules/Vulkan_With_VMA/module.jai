@@ -83,7 +83,7 @@ VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
     #load "generated_windows.jai";
     #load "generated_funcs_windows.jai";
 
-#scope_module // -------------------------------------------------------------------------------------------- { MODULE }
+#scope_export // -------------------------------------------------------------------------------------------- { MODULE }
 
     #if USE_LOCAL_VULKAN_DYNAMIC_LIB {
         libvulkan :: #library "libs/win/vulkan-1";
