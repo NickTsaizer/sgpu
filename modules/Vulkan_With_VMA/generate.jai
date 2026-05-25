@@ -277,26 +277,12 @@ vulkan_visitor :: (decl: *Declaration, parent_decl: *Declaration) -> Declaration
         if enum_value_name == "PHYSICAL_DEVICE_VULKAN_13_PROPERTIES" then enum_value_name = "PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES";
         if enum_value_name == "PHYSICAL_DEVICE_VULKAN_14_FEATURES" then enum_value_name = "PHYSICAL_DEVICE_VULKAN_1_4_FEATURES";
         if enum_value_name == "PHYSICAL_DEVICE_VULKAN_14_PROPERTIES" then enum_value_name = "PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES";
-        if enum_value_name == "PHYSICAL_DEVICE_SHADER_ATOMIC_INT_64_FEATURES" then enum_value_name = "PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES";
-        if enum_value_name == "PHYSICAL_DEVICE_SHADER_FLOAT_16_INT_8_FEATURES" then enum_value_name = "PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES";
-        if enum_value_name == "PHYSICAL_DEVICE_SHADER_FLOAT_8_FEATURES_EXT" then enum_value_name = "PHYSICAL_DEVICE_SHADER_FLOAT8_FEATURES_EXT";
-        if enum_value_name == "PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_16_VECTOR_FEATURES_NV" then enum_value_name = "PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT16_VECTOR_FEATURES_NV";
         if enum_value_name == "PHYSICAL_DEVICE_TEXTURE_COMPRESSION_ASTCHDR_FEATURES" then enum_value_name = "PHYSICAL_DEVICE_TEXTURE_COMPRESSION_ASTC_HDR_FEATURES";
-        if enum_value_name == "PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT_64_FEATURES_EXT" then enum_value_name = "PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT";
-        if enum_value_name == "PHYSICAL_DEVICE_INDEX_TYPE_UINT_8_FEATURES_EXT" then enum_value_name = "PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT";
-        if enum_value_name == "PHYSICAL_DEVICE_RGB_A_10_X_6_FORMATS_FEATURES_EXT" then enum_value_name = "PHYSICAL_DEVICE_RGBA10X6_FORMATS_FEATURES_EXT";
+        if enum_value_name == "PHYSICAL_DEVICE_RGBA_10_X_6_FORMATS_FEATURES_EXT" then enum_value_name = "PHYSICAL_DEVICE_RGBA10X6_FORMATS_FEATURES_EXT";
         if enum_value_name == "PHYSICAL_DEVICE_IMAGE_2_D_VIEW_OF_3_D_FEATURES_EXT" then enum_value_name = "PHYSICAL_DEVICE_IMAGE_2D_VIEW_OF_3D_FEATURES_EXT";
         if enum_value_name == "PHYSICAL_DEVICE_IMAGE_SLICED_VIEW_OF_3_D_FEATURES_EXT" then enum_value_name = "PHYSICAL_DEVICE_IMAGE_SLICED_VIEW_OF_3D_FEATURES_EXT";
-        if enum_value_name == "PHYSICAL_DEVICE_INDEX_TYPE_UINT_8_FEATURES" then enum_value_name = "PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES";
-        if enum_value_name == "PHYSICAL_DEVICE_SHADER_BFLOAT_16_FEATURES_KHR" then enum_value_name = "PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR";
         if enum_value_name == "PHYSICAL_DEVICE_SHADER_64BIT_INDEXING_FEATURES_EXT" then enum_value_name = "PHYSICAL_DEVICE_SHADER_64_BIT_INDEXING_FEATURES_EXT";
-
         if enum_value_name == "MAC_OS_SURFACE_CREATE_INFO_MVK" then enum_value_name = "MACOS_SURFACE_CREATE_INFO_MVK";
-
-        enum_value_name = replace(enum_value_name, "H_264", "H264");
-        enum_value_name = replace(enum_value_name, "H_265", "H265");
-        enum_value_name = replace(enum_value_name, "A_V_1", "AV1");
-        enum_value_name = replace(enum_value_name, "V_P_9", "VP9");
 
         enum_value: *Declaration;
         for struct_type_decl.enumerates {
@@ -335,16 +321,32 @@ get_sType_default_value_from_struct_name :: (name: string) -> string {
     for i: 3..name.count-1 {
         if is_upper(name[i]) {
             is_first_uppercase := !is_upper(name[i-1]);
-            is_end_of_uppercase_word := (i != name.count-1 && !is_upper(name[i+1]));
+            is_end_of_uppercase_word := (i != name.count-1 && !is_upper(name[i+1]) && !is_num(name[i+1]));
             is_bit_count := is_num(name[i-1]) && slice(name, i, 3) == "Bit";
             if (is_first_uppercase || is_end_of_uppercase_word) && !is_bit_count {
                 append(*builder, #char "_");
-            } else if (i >= 4 && slice(name, i-4, 4) == "AABB")
+            } else if (i >= 4 && slice(name, i-4, 4) == "AABB") { // Special case hack for names involing AABB
                 append(*builder, #char "_");
+            }
             append(*builder, name[i]);
         } else if is_num(name[i]) {
-            if !is_num(name[i-1])
-                append(*builder, #char "_");
+            if !is_num(name[i-1]) {
+
+                // Here we check a bunch of special cases where a number should be after a letter without an underscore.
+                skip_underscore := false;
+                skip_underscore ||= slice(name, i-1, 3) == "H26"; // Special case for H264 and H265
+                skip_underscore ||= slice(name, i-2, 2) == "AV"; // AV1
+                skip_underscore ||= slice(name, i-2, 2) == "VP"; // VP9
+                if i >= 4 {
+                    skip_underscore ||= slice(name, i-4, 4) == "loat" && name[i] != "2"; // Bfloat and Float, but not float 2 features
+                    skip_underscore ||= slice(name, i-4, 4) == "Uint";
+                    skip_underscore ||= slice(name, i-3, 5) == "Win32";
+                }
+                skip_underscore ||= slice(name, i-3, 3) == "Int";
+                if !skip_underscore {
+                    append(*builder, #char "_");
+                }
+            }
             append(*builder, name[i]);
         } else {
             append(*builder, to_upper(name[i]));
