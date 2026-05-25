@@ -81,7 +81,6 @@ VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
 #if OS == .WINDOWS {
     #load "generated_windows.jai";
     #load "generated_funcs_windows.jai";
-    #load "windows_extras.jai";
 
 #scope_module // -------------------------------------------------------------------------------------------- { MODULE }
 
