@@ -79,6 +79,7 @@ VK_API_VERSION_MINOR   :: (version: u32) -> u32 { return (version >> 12) & 0x3ff
 VK_API_VERSION_PATCH   :: (version: u32) -> u32 { return version & 0xfff; }
 
 #if OS == .WINDOWS {
+    #import "Windows";
     #load "generated_windows.jai";
     #load "generated_funcs_windows.jai";
 
