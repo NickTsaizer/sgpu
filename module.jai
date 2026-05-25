@@ -648,8 +648,8 @@ gpu_get_queue :: (queue_type: Gpu_Queue_Type, queue_index: u32) -> Gpu_Queue {
 
 #scope_module
 
-assert_vk_result :: (result: VkResult) {
-    assert(result == VkResult.SUCCESS);
+assert_vk_result :: (result: VkResult, info: string = "") {
+    assert(result == VkResult.SUCCESS, info);
 }
 
 // #todo: all these return_if_errors need to be cleaned up.
